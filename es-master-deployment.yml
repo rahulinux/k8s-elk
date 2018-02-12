@@ -1,0 +1,81 @@
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: es-master
+  labels:
+    component: elasticsearch
+    role: master
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        component: elasticsearch
+        role: master
+      annotations:
+        # see https://www.elastic.co/guide/en/elasticsearch/reference/current/vm-max-map-count.html
+        # and https://www.elastic.co/guide/en/elasticsearch/reference/current/setup-configuration-memory.html#mlockall
+        pod.alpha.kubernetes.io/init-containers: '[
+          {
+            "name": "sysctl",
+            "image": "busybox",
+            "imagePullPolicy": "Always",
+            "command": ["sysctl", "-w", "vm.max_map_count=262144"],
+            "securityContext": {
+              "privileged": true
+            }
+          }
+        ]'
+    spec:
+      serviceAccount: wso2am 
+      imagePullSecrets:
+      - name: suxenkey
+      containers:
+      - name: es-master 
+        imagePullPolicy: Always
+        image: quay.io/pires/docker-elasticsearch-kubernetes:5.5.0 
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: 3Gi
+          requests:
+           cpu: "1000m"
+           memory: 2Gi
+        securityContext:
+           privileged: true
+        readinessProbe:
+          httpGet:
+            path: /_cluster/health?local=true
+            port: 9200
+          initialDelaySeconds: 5
+        env:
+          #- name: DISCOVERY_SERVICE
+          #value: elasticsearch-discovery
+          #- name: ES_PLUGINS_INSTALL
+          #- value: "x-pack"
+        - name: KUBERNETES_CA_CERTIFICATE_FILE
+          value: /var/run/secrets/kubernetes.io/service_account/ca.crt
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: CLUSTER_NAME
+          value: "myesdb"
+        - name: NODE_MASTER
+          value: "true"
+        - name: NODE_DATA
+          value: "false"
+        - name: HTTP_ENABLE
+          value: "true"
+        - name: ES_JAVA_OPTS
+          value: "-Djava.net.preferIPv4Stack=true -Xms1024m -Xmx1512m"
+        ports:
+        - containerPort: 9300
+          name: transport
+          protocol: TCP
+        volumeMounts:
+        - mountPath: /data
+          name: storage
+      volumes:
+      - name: storage
+        emptyDir: {}
